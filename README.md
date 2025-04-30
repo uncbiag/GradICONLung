@@ -58,6 +58,8 @@ To use a different similarity measure in the IO. We currently support three simi
 - LNCC: lncc
 - Squared LNCC: lncc2
 - MIND SSC: mind
+- SSD: ssd
+- LNCC (Learns how to mask): lncc_mask_gradient
 ```
 unigradicon-register --fixed=RegLib_C01_2.nrrd --fixed_modality=mri --moving=RegLib_C01_1.nrrd --moving_modality=mri --transform_out=trans.hdf5 --warped_moving_out=warped_C01_1.nrrd --io_iterations 50 --io_sim lncc2
 ```

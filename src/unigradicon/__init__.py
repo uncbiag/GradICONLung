@@ -177,6 +177,38 @@ def register_pair_with_mask(model, image_A, image_B, mask_A, mask_B, finetune_st
     else:
         return itk_transforms + (to_floats(loss),)
     
+class SSD(icon.losses.SimilarityBase):
+    def __init__(self):
+        super().__init__(isInterpolated=False)
+
+    def __call__(self, warped_image_A, image_B, warped_mask_A = None, mask_B=None):
+        I = warped_image_A
+        J = image_B
+        assert I.shape == J.shape, "The shape of image I and J should be the same."
+        
+        if mask_B is not None:
+            assert mask_B.shape == J.shape, "The shape of mask and J should be the same."
+        
+        ssd = (I - J) ** 2
+        
+        mask = torch.ones_like(ssd)
+        
+        if warped_mask_A is not None:
+            assert warped_mask_A.shape == I.shape, "The shape of mask and I should be the same."
+            assert mask_B.shape == warped_mask_A.shape, "The shape of mask and warped_mask_A should be the same."
+            
+            warped_mask_A_clone = warped_mask_A.clone()
+            warped_mask_A_clone[warped_mask_A_clone != 0] = 1
+            mask = torch.logical_and(mask, warped_mask_A_clone)
+        
+        if mask_B is not None:
+            mask_B_clone = mask_B.clone()
+            mask_B_clone[mask_B_clone != 0] = 1
+            mask = torch.logical_and(mask, mask_B_clone)
+            
+        ssd = ssd * mask
+
+        return torch.mean(ssd)
 
 class LNCC(icon.losses.SimilarityBase):
     def __init__(self, sigma):
@@ -220,6 +252,27 @@ class LNCC(icon.losses.SimilarityBase):
         lncc = lncc * mask
 
         return 1 - torch.mean(lncc)
+    
+class LNCCMaskGradient(icon.losses.LNCC):
+    def __call__(self, warped_image_A, image_B, warped_mask_A = None, mask_B=None):
+        I = warped_image_A
+        J = image_B
+        assert I.shape == J.shape, "The shape of image I and J should be the same."
+        
+        if mask_B is not None:
+            assert mask_B.shape == J.shape, "The shape of mask and J should be the same."
+        
+        lncc = self.calculate_lncc(I, J)
+        
+        if warped_mask_A is not None and mask_B is not None:
+            mask = warped_mask_A * mask_B
+            
+        elif mask_B is not None:
+            mask = mask_B
+
+        lncc = lncc * mask
+        
+        return 1 - torch.mean(lncc)
 
 class SquaredLNCC(icon.losses.LNCC):
     def __call__(self, warped_image_A, image_B, warped_mask_A = None, mask_B=None):
@@ -252,7 +305,7 @@ class SquaredLNCC(icon.losses.LNCC):
         return 1 - torch.mean(lncc**2)
 
 
-class MINDSSC(SimilarityBase):
+class MINDSSC(icon.losses.SimilarityBase):
     def __init__(self, radius, dilation):
         super().__init__(isInterpolated=False)
         self.radius = radius
@@ -418,21 +471,23 @@ class GradientICONSparse(network_wrappers.RegistrationModule):
         )
         
         if mask_A is not None and self.use_intersection:
+            mask_A[mask_A != 0] = 1
             self.warped_mask_A = compute_warped_image_multiNC(
                 torch.cat([mask_A, inbounds_tag], axis=1) if inbounds_tag is not None else mask_A,
                 self.phi_AB_vectorfield,
                 self.spacing,
-                0,
+                1,
             )
         else:
             self.warped_mask_A = None
         
         if mask_B is not None and self.use_intersection:
+            mask_B[mask_B != 0] = 1
             self.warped_mask_B = compute_warped_image_multiNC(
                 torch.cat([mask_B, inbounds_tag], axis=1) if inbounds_tag is not None else mask_B,
                 self.phi_BA_vectorfield,
                 self.spacing,
-                0,
+                1,
             )
         else:
             self.warped_mask_B = None
@@ -583,6 +638,10 @@ def make_network(input_shape, include_last_step=False, lmbda=1.5, loss_fn=icon.L
 def make_sim(similarity, sigma=5):
     if similarity == "lncc":
         return LNCC(sigma=sigma)
+    elif similarity == "lncc_mask_gradient":
+        return LNCCMaskGradient(sigma=sigma)
+    elif similarity == "ssd":
+        return SSD()
     elif similarity == "lncc2":
         return SquaredLNCC(sigma=sigma)
     elif similarity == "mind":
