@@ -38,7 +38,9 @@ Installation
 python3 -m venv unigradicon_virtualenv
 source unigradicon_virtualenv/bin/activate
 
-pip install unigradicon
+git clone https://github.com/uncbiag/uniGradICONLung.git
+cd uniGradICONLung
+pip install .
 ```
 
 To register one pair of image
@@ -64,7 +66,7 @@ To use a different similarity measure in the IO. We currently support three simi
 unigradicon-register --fixed=RegLib_C01_2.nrrd --fixed_modality=mri --moving=RegLib_C01_1.nrrd --moving_modality=mri --transform_out=trans.hdf5 --warped_moving_out=warped_C01_1.nrrd --io_iterations 50 --io_sim lncc2
 ```
 
-To load specific model weight in the inference. We currently support uniGradICON and multiGradICON.
+To load specific model weight in the inference. We currently support uniGradICON, multiGradICON, and gradiconlung. gradiconlung is specifically trained for lung CT registration.
 ```
 unigradicon-register --fixed=RegLib_C01_2.nrrd --fixed_modality=mri --moving=RegLib_C01_1.nrrd --moving_modality=mri --transform_out=trans.hdf5 --warped_moving_out=warped_C01_1.nrrd --model multigradicon
 ```

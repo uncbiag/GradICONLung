@@ -14,7 +14,7 @@ from icon_registration import config
 from icon_registration.losses import ICONLoss, to_floats
 from icon_registration.mermaidlite import compute_warped_image_multiNC
 import icon_registration.itk_wrapper
-
+import gdown
 import copy
 
 input_shape = [1, 1, 175, 175, 175]
@@ -684,11 +684,31 @@ def get_unigradicon(loss_fn=icon.LNCC(sigma=5), apply_intensity_conservation_los
     net.eval()
     return net
 
+
+def get_gradicon_lung(loss_fn=icon.LNCC(sigma=5), apply_intensity_conservation_loss=False, use_intersection=False):
+    net = make_network(input_shape, include_last_step=True, loss_fn=loss_fn, apply_intensity_conservation_loss=apply_intensity_conservation_loss, use_intersection=use_intersection)
+    from os.path import exists
+    weights_location = "network_weights/gradicon_lung1.0/Step_2_final.trch"
+    if not exists(weights_location):
+        print("Downloading pretrained gradicon lung model")
+        import os
+        os.makedirs("network_weights/gradicon_lung1.0/", exist_ok=True)
+        gdown.download(id="1UZjF0UIiMBYM9cqrpCihiPEJWD5M-Njk", output=weights_location, quiet=False)
+
+    trained_weights = torch.load(weights_location, map_location=torch.device("cpu"), weights_only=False)
+    net.regis_net.load_state_dict(trained_weights)
+    net.to(config.device)
+    net.eval()
+    return net
+
+
 def get_model_from_model_zoo(model_name="unigradicon", loss_fn=icon.LNCC(sigma=5), apply_intensity_conservation_loss=False, use_intersection=False):
     if model_name == "unigradicon":
         return get_unigradicon(loss_fn, apply_intensity_conservation_loss, use_intersection)
     elif model_name == "multigradicon":
         return get_multigradicon(loss_fn, apply_intensity_conservation_loss, use_intersection)
+    elif model_name == "gradiconlung":
+        return get_gradicon_lung(loss_fn, apply_intensity_conservation_loss, use_intersection)
     else:
         raise ValueError(f"Model {model_name} not recognized. Choose from [unigradicon, multigradicon].")
 
@@ -761,7 +781,7 @@ def main():
     parser.add_argument("--io_sim", required=False,
                          default="lncc", help="The similarity measure used in IO. Default is LNCC. Choose from [lncc, lncc2, mind].")
     parser.add_argument("--model", required=False,
-                         default="unigradicon", help="The model to load. Default is unigradicon. Choose from [unigradicon, multigradicon].")
+                         default="unigradicon", help="The model to load. Default is unigradicon. Choose from [unigradicon, multigradicon, gradiconlung].")
     parser.add_argument("--loss_function_masking", required=False,
                          action="store_true", help="Apply loss function masking using the provided segmentations. \
                              If not set, segmentations will instead be used to mask out the images before registration.")
