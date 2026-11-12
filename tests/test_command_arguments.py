@@ -5,7 +5,6 @@ import icon_registration.test_utils
 
 import subprocess
 import os
-import torch
 
 
 class TestCommandInterface(unittest.TestCase):
@@ -15,96 +14,37 @@ class TestCommandInterface(unittest.TestCase):
         self.test_data_dir = icon_registration.test_utils.TEST_DATA_DIR
         self.test_temp_dir = f"{self.test_data_dir}/temp"
         os.makedirs(self.test_temp_dir, exist_ok=True)
-        self.device = torch.cuda.current_device()
-
-    def test_register_unigradicon_inference(self):
-        subprocess.run([
-            "unigradicon-register",
-            "--fixed", f"{self.test_data_dir}/lung_test_data/copd1_highres_EXP_STD_COPD_img.nii.gz",
-            "--fixed_modality", "ct",
-            "--fixed_segmentation", f"{self.test_data_dir}/lung_test_data/copd1_highres_EXP_STD_COPD_label.nii.gz",
-            "--moving", f"{self.test_data_dir}/lung_test_data/copd1_highres_INSP_STD_COPD_img.nii.gz",
-            "--moving_modality", "ct",
-            "--moving_segmentation", f"{self.test_data_dir}/lung_test_data/copd1_highres_INSP_STD_COPD_label.nii.gz",
-            "--transform_out", f"{self.test_temp_dir}/transform.hdf5",
-            "--io_iterations", "None"
-        ])
-
-        # load transform
-        phi_AB = itk.transformread(f"{self.test_temp_dir}/transform.hdf5")[0]
-
-        assert isinstance(phi_AB, itk.CompositeTransform)
-
-        insp_points = icon_registration.test_utils.read_copd_pointset(
-            str(
-                icon_registration.test_utils.TEST_DATA_DIR
-                / "lung_test_data/copd1_300_iBH_xyz_r1.txt"
-            )
-        )
-        exp_points = icon_registration.test_utils.read_copd_pointset(
-            str(
-                icon_registration.test_utils.TEST_DATA_DIR
-                / "lung_test_data/copd1_300_eBH_xyz_r1.txt"
-            )
-        )
-
-        dists = []
-        for i in range(len(insp_points)):
-            px, py = (
-                insp_points[i],
-                np.array(phi_AB.TransformPoint(tuple(exp_points[i]))),
-            )
-            dists.append(np.sqrt(np.sum((px - py) ** 2)))
-        print(np.mean(dists))
-        self.assertLess(np.mean(dists), 2.1)
-
-        # remove temp file
-        os.remove(f"{self.test_temp_dir}/transform.hdf5")
-    
-    def test_register_multigradicon_inference(self):
-        subprocess.run([
-            "unigradicon-register",
-            "--fixed", f"{self.test_data_dir}/lung_test_data/copd1_highres_EXP_STD_COPD_img.nii.gz",
-            "--fixed_modality", "ct",
-            "--fixed_segmentation", f"{self.test_data_dir}/lung_test_data/copd1_highres_EXP_STD_COPD_label.nii.gz",
-            "--moving", f"{self.test_data_dir}/lung_test_data/copd1_highres_INSP_STD_COPD_img.nii.gz",
-            "--moving_modality", "ct",
-            "--moving_segmentation", f"{self.test_data_dir}/lung_test_data/copd1_highres_INSP_STD_COPD_label.nii.gz",
-            "--transform_out", f"{self.test_temp_dir}/transform.hdf5",
+        lung = f"{self.test_data_dir}/lung_test_data"
+        self.register = [
+            "gradiconlung-register",
+            "--fixed", f"{lung}/copd1_highres_EXP_STD_COPD_img.nii.gz",
+            "--moving", f"{lung}/copd1_highres_INSP_STD_COPD_img.nii.gz",
             "--io_iterations", "None",
-            "--model", "multigradicon"
+        ]
+        self.insp_points = icon_registration.test_utils.read_copd_pointset(f"{lung}/copd1_300_iBH_xyz_r1.txt")
+        self.exp_points = icon_registration.test_utils.read_copd_pointset(f"{lung}/copd1_300_eBH_xyz_r1.txt")
+
+    def mean_tre(self, transform_file):
+        phi_AB = itk.transformread(transform_file)[0]
+        assert isinstance(phi_AB, itk.CompositeTransform)
+        return np.mean([
+            np.linalg.norm(self.insp_points[i] - np.array(phi_AB.TransformPoint(tuple(self.exp_points[i]))))
+            for i in range(len(self.exp_points))
         ])
 
-        # load transform
-        phi_AB = itk.transformread(f"{self.test_temp_dir}/transform.hdf5")[0]
+    def test_register_inference(self):
+        transform = f"{self.test_temp_dir}/transform.hdf5"
+        subprocess.run(self.register + ["--transform_out", transform], check=True)
 
-        assert isinstance(phi_AB, itk.CompositeTransform)
+        self.assertLess(self.mean_tre(transform), 2.0)
+        os.remove(transform)
 
-        insp_points = icon_registration.test_utils.read_copd_pointset(
-            str(
-                icon_registration.test_utils.TEST_DATA_DIR
-                / "lung_test_data/copd1_300_iBH_xyz_r1.txt"
-            )
-        )
-        exp_points = icon_registration.test_utils.read_copd_pointset(
-            str(
-                icon_registration.test_utils.TEST_DATA_DIR
-                / "lung_test_data/copd1_300_eBH_xyz_r1.txt"
-            )
-        )
+    def test_register_svf(self):
+        transform = f"{self.test_temp_dir}/transform_svf.hdf5"
+        velocity = f"{self.test_temp_dir}/svf.nii.gz"
+        subprocess.run(self.register + ["--transform_out", transform, "--svf_out", velocity], check=True)
 
-        dists = []
-        for i in range(len(insp_points)):
-            px, py = (
-                insp_points[i],
-                np.array(phi_AB.TransformPoint(tuple(exp_points[i]))),
-            )
-            dists.append(np.sqrt(np.sum((px - py) ** 2)))
-        print(np.mean(dists))
-        self.assertLess(np.mean(dists), 3.8)
-
-        # remove temp file
-        os.remove(f"{self.test_temp_dir}/transform.hdf5")
-
-        
-        
+        self.assertLess(self.mean_tre(transform), 2.0)
+        self.assertEqual(itk.array_from_image(itk.imread(velocity)).shape, (175, 175, 175, 3))
+        os.remove(transform)
+        os.remove(velocity)

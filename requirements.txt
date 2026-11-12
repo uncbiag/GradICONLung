@@ -1,2 +1,2 @@
-icon_registration>=1.1.6
-gdown
+icon_registration>=1.1.9
+unigradicon>=1.0.6
